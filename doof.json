@@ -1,0 +1,14 @@
+{
+  "name": "std/dom",
+  "version": "0.1.0",
+  "license": "ISC",
+  "build": {
+    "native": {
+      "extraCopyPaths": [
+        "native_dom.hpp",
+        "doof-dom.js"
+      ]
+    }
+  },
+  "dependencies": {}
+}
