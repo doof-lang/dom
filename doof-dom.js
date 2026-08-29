@@ -305,7 +305,7 @@ function createDomBridge(document, onError) {
     ) {
       const canvas = node(id);
       const preferences = ["default", "low-power", "high-performance"];
-      const value = canvas.getContext?.("webgl", {
+      const value = canvas.getContext?.("webgl2", {
         alpha: alpha !== 0,
         antialias: antialias !== 0,
         depth: depth !== 0,
@@ -316,13 +316,7 @@ function createDomBridge(document, onError) {
       }) ?? null;
       if (!value) return 0;
       const contextId = nextContextId++;
-      contexts.set(contextId, {
-        canvas,
-        value,
-        instancing: value.getExtension?.("ANGLE_instanced_arrays") ?? null,
-        unsignedIntIndices: value.getExtension?.("OES_element_index_uint") ?? null,
-        depthTexture: value.getExtension?.("WEBGL_depth_texture") ?? null,
-      });
+      contexts.set(contextId, { canvas, value });
       return contextId;
     },
     destroy_webgl_context(id) {
@@ -401,26 +395,20 @@ function createDomBridge(document, onError) {
       else if (operation === 32) value.frontFace(a);
       else if (operation === 33) value.scissor(a, b, c, d);
       else if (operation === 34) value.polygonOffset(a, b);
-      else if (operation === 35) return contexts.get(id)?.instancing ? 1 : 0;
+      else if (operation === 35) return 1;
       else if (operation === 36) {
-        const extension = contexts.get(id)?.instancing;
-        if (!extension) return 0;
-        extension.vertexAttribDivisorANGLE(primary, a);
+        value.vertexAttribDivisor(primary, a);
         return 1;
       } else if (operation === 37) {
-        const extension = contexts.get(id)?.instancing;
-        if (!extension) return 0;
-        extension.drawArraysInstancedANGLE(a, b, c, d);
+        value.drawArraysInstanced(a, b, c, d);
         return 1;
       } else if (operation === 38) {
-        const extension = contexts.get(id)?.instancing;
-        if (!extension) return 0;
-        extension.drawElementsInstancedANGLE(a, b, c, d, e);
+        value.drawElementsInstanced(a, b, c, d, e);
         return 1;
-      } else if (operation === 39) return contexts.get(id)?.unsignedIntIndices ? 1 : 0;
+      } else if (operation === 39) return 1;
       else if (operation === 40) return value.getParameter(value.MAX_VERTEX_ATTRIBS);
       else if (operation === 41) return value.getParameter(value.MAX_TEXTURE_IMAGE_UNITS);
-      else if (operation === 42) return contexts.get(id)?.depthTexture ? 1 : 0;
+      else if (operation === 42) return 1;
       else if (operation === 43) value.bindFramebuffer(a, primary === 0 ? null : webglResource(id, primary, "framebuffer"));
       else if (operation === 44) value.framebufferTexture2D(a, b, c, webglResource(id, primary, "texture"), 0);
       else if (operation === 45) return value.checkFramebufferStatus(a);
@@ -487,7 +475,7 @@ function createDomBridge(document, onError) {
       context(id).texImage2D(target, 0, 6408, width, height, 0, 6408, 5121, pixels);
     },
     webgl_texture_depth(id, target, width, height) {
-      context(id).texImage2D(target, 0, 6402, width, height, 0, 6402, 5123, null);
+      context(id).texImage2D(target, 0, 33189, width, height, 0, 6402, 5123, null);
     },
     webgl_texture_image(id, target, imageId) {
       context(id).texImage2D(target, 0, 6408, 6408, 5121, node(imageId));

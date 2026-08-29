@@ -43,11 +43,6 @@ class FakeWebGLContext {
     this.TEXTURE0 = 33984;
     this.MAX_VERTEX_ATTRIBS = 34921;
     this.MAX_TEXTURE_IMAGE_UNITS = 34930;
-    this.instancing = {
-      vertexAttribDivisorANGLE: (...args) => this.record("vertexAttribDivisorANGLE", ...args),
-      drawArraysInstancedANGLE: (...args) => this.record("drawArraysInstancedANGLE", ...args),
-      drawElementsInstancedANGLE: (...args) => this.record("drawElementsInstancedANGLE", ...args),
-    };
   }
   record(name, ...args) { this.calls.push([name, ...args]); }
   createShader(type) { const value = { kind: "shader", type, source: "", compiled: false }; this.record("createShader", type); return value; }
@@ -82,12 +77,9 @@ class FakeWebGLContext {
   drawElements(...args) { this.record("drawElements", ...args); }
   flush() { this.record("flush"); }
   finish() { this.record("finish"); }
-  getExtension(name) {
-    this.record("getExtension", name);
-    if (name === "ANGLE_instanced_arrays") return this.instancing;
-    if (name === "OES_element_index_uint" || name === "WEBGL_depth_texture") return { supported: true };
-    return null;
-  }
+  vertexAttribDivisor(...args) { this.record("vertexAttribDivisor", ...args); }
+  drawArraysInstanced(...args) { this.record("drawArraysInstanced", ...args); }
+  drawElementsInstanced(...args) { this.record("drawElementsInstanced", ...args); }
   getParameter(name) {
     this.record("getParameter", name);
     if (name === this.MAX_VERTEX_ATTRIBS) return 16;
@@ -214,7 +206,8 @@ class FakeNode {
   blur() { this.focused = false; }
   getContext(kind, options) {
     if (kind === "2d") return this.canvasContext;
-    if (kind === "webgl") {
+    if (kind === "webgl2") {
+      this.webglContextKind = kind;
       this.webglContextOptions = options;
       return this.webglContext;
     }
@@ -494,6 +487,7 @@ test("owns WebGL resources and routes a foundational render pipeline", () => {
   const { document, imports, memory, write } = harness();
   const canvas = imports.create_element(write("canvas"));
   const context = imports.canvas_context_webgl(canvas, 1, 0, 1, 1, 0, 1, 2);
+  assert.equal(document.created[0].webglContextKind, "webgl2");
   assert.deepEqual(document.created[0].webglContextOptions, {
     alpha: true,
     antialias: false,
@@ -505,8 +499,8 @@ test("owns WebGL resources and routes a foundational render pipeline", () => {
   });
   const vertex = imports.webgl_create_resource(context, 0, 35633);
   const fragment = imports.webgl_create_resource(context, 0, 35632);
-  imports.webgl_string_operation(context, 0, vertex, write("attribute vec2 position;"), 0, 0, 0, 0);
-  imports.webgl_string_operation(context, 0, fragment, write("void main() {}"), 0, 0, 0, 0);
+  imports.webgl_string_operation(context, 0, vertex, write("#version 300 es\nin vec2 position;"), 0, 0, 0, 0);
+  imports.webgl_string_operation(context, 0, fragment, write("#version 300 es\nout vec4 color; void main() { color = vec4(1.0); }"), 0, 0, 0, 0);
   imports.webgl_operation(context, 0, vertex, 0, 0, 0, 0, 0, 0, 0);
   imports.webgl_operation(context, 0, fragment, 0, 0, 0, 0, 0, 0, 0);
   assert.equal(imports.webgl_operation(context, 1, vertex, 0, 0, 0, 0, 0, 0, 0), 1);
@@ -594,12 +588,13 @@ test("owns WebGL resources and routes a foundational render pipeline", () => {
   assert.ok(calls.some(([name, mode, count, type]) => name === "drawElements" && mode === 4 && count === 3 && type === 5123));
   assert.ok(calls.some(([name, unit]) => name === "activeTexture" && unit === 33986));
   assert.ok(calls.some(([name, , , , width, height]) => name === "texImage2D" && width === 2 && height === 2));
-  assert.ok(calls.some(([name, , , , width, height, , format, type, pixels]) =>
-    name === "texImage2D" && width === 256 && height === 128 && format === 6402 && type === 5123 && pixels === null));
+  assert.ok(calls.some(([name, , , internalFormat, width, height, , format, type, pixels]) =>
+    name === "texImage2D" && internalFormat === 33189 && width === 256 && height === 128
+      && format === 6402 && type === 5123 && pixels === null));
   assert.ok(calls.some(([name, target, attachment]) => name === "framebufferTexture2D" && target === 36160 && attachment === 36096));
   assert.ok(calls.some(([name, target, format, width, height]) =>
     name === "renderbufferStorage" && target === 36161 && format === 33189 && width === 256 && height === 128));
-  assert.ok(calls.some(([name, mode, , count, instances]) => name === "drawArraysInstancedANGLE" && mode === 4 && count === 3 && instances === 5));
+  assert.ok(calls.some(([name, mode, , count, instances]) => name === "drawArraysInstanced" && mode === 4 && count === 3 && instances === 5));
 
   const invalid = imports.webgl_create_resource(context, 0, 35633);
   imports.webgl_string_operation(context, 0, invalid, write("invalid shader"), 0, 0, 0, 0);

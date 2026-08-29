@@ -154,16 +154,16 @@ export function testBuildsAFoundationalWebGLPipeline(): none {
   })
   vertex := try! gl.compileShader(
     WebGLShaderType.Vertex,
-    "attribute vec2 position; void main() { gl_Position = vec4(position, 0.0, 1.0); }",
+    "#version 300 es\nin vec2 position; void main() { gl_Position = vec4(position, 0.0, 1.0); }",
   )
   fragment := try! gl.compileShader(
     WebGLShaderType.Fragment,
-    "precision mediump float; uniform vec4 color; void main() { gl_FragColor = color; }",
+    "#version 300 es\nprecision mediump float; uniform vec4 color; out vec4 fragmentColor; void main() { fragmentColor = color; }",
   )
   program := try! gl.linkProgram(vertex, fragment)
   convenienceProgram := try! gl.createProgram(
-    "attribute vec2 position; void main() { gl_Position = vec4(position, 0.0, 1.0); }",
-    "precision mediump float; void main() { gl_FragColor = vec4(1.0); }",
+    "#version 300 es\nin vec2 position; void main() { gl_Position = vec4(position, 0.0, 1.0); }",
+    "#version 300 es\nprecision mediump float; out vec4 color; void main() { color = vec4(1.0); }",
   )
   buffer := gl.createBuffer()
   indices := gl.createBuffer()

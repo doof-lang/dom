@@ -655,7 +655,6 @@ export class WebGLContext {
     width: int, height: int, target: WebGLTextureTarget = .Texture2D,
   ): Result<WebGLTexture, string> {
     if width <= 0 || height <= 0 { return Failure { error: "WebGL depth texture dimensions must be positive" } }
-    if !supportsDepthTextures() { return Failure { error: "This WebGL context does not support depth textures" } }
     texture := createTexture()
     bindTexture(target, texture)
     native.textureImageDepth(target.value, width, height)
@@ -704,7 +703,6 @@ export class WebGLContext {
   bufferDataUnsignedInt(
     target: WebGLBufferTarget, values: int[], usage: WebGLBufferUsage = .StaticDraw,
   ): WebGLContext {
-    if !supportsUnsignedIntIndices() { panic("This WebGL context does not support unsigned-int indices") }
     native.bufferDataUnsignedInt(target.value, values, usage.value)
     return this
   }

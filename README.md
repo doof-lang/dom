@@ -151,7 +151,9 @@ dash arrays are intentionally deferred until the core bridge has real usage.
 
 ## WebGL
 
-`Canvas.contextWebgl()` creates a WebGL 1 context. Shaders, programs, buffers,
+`Canvas.contextWebgl()` creates a WebGL 2 context. WebGL 2 is required; context
+creation fails on browsers or GPUs that do not provide it. Shaders, programs,
+buffers,
 and textures are opaque retained handles; their browser resources are deleted
 when their Doof handles are released. Shader compilation and program linking
 return `Result` values containing the browser's diagnostic log on failure.
@@ -167,8 +169,8 @@ import {
 surface := <canvas width=320 height=180 ariaLabel="Triangle preview"/>
 gl := surface.contextWebgl()
 program := try! gl.createProgram(
-  "attribute vec2 position; void main() { gl_Position = vec4(position, 0.0, 1.0); }",
-  "precision mediump float; void main() { gl_FragColor = vec4(0.3, 0.8, 1.0, 1.0); }",
+  "#version 300 es\nin vec2 position; void main() { gl_Position = vec4(position, 0.0, 1.0); }",
+  "#version 300 es\nprecision mediump float; out vec4 color; void main() { color = vec4(0.3, 0.8, 1.0, 1.0); }",
 )
 vertices := gl.createBuffer()
 
@@ -188,7 +190,7 @@ surface.appendTo(domDocument().body())
 ```
 
 The foundational surface includes shader/program compilation, interleaved
-float attributes, raw byte buffers, unsigned-short and extension-backed
+float attributes, raw byte buffers, unsigned-short and core
 unsigned-int index buffers, scalar/vector and 4x4-matrix
 uniforms, viewport and clear state, capability toggles, indexed and
 non-indexed draws, and explicit flush/finish.
@@ -206,15 +208,15 @@ masks, face culling and winding, scissor rectangles, and polygon offset. It is
 enough to model the interleaved meshes, texture atlases, alpha passes, and card
 or particle batches used by `std/game` without exposing browser objects.
 
-WebGL 1 instancing is exposed through `supportsInstancing`,
-`attributeDivisor`, and the two instanced draw methods. The methods that need
-the `ANGLE_instanced_arrays` extension return `bool`, so a consumer can fall
-back to ordinary indexed draws when the browser does not provide it. The
-counter sample demonstrates that path with a tiny textured card batch.
+Core WebGL 2 instancing is exposed through `supportsInstancing`,
+`attributeDivisor`, and the two instanced draw methods. The capability method
+and `bool` draw results remain for API compatibility, but succeed for every
+created context. The counter sample demonstrates a tiny textured card batch.
 
-Consumers can check `supportsUnsignedIntIndices` before uploading 32-bit index
-data, and inspect `maxVertexAttributes` and `maxTextureUnits` before selecting
-a batch layout. `bufferDataBytes` preserves packed and normalized vertex data;
+Unsigned-int indices are part of the required WebGL 2 baseline. Consumers can
+still call `supportsUnsignedIntIndices` for API compatibility, and inspect
+`maxVertexAttributes` and `maxTextureUnits` before selecting a batch layout.
+`bufferDataBytes` preserves packed and normalized vertex data;
 `bufferDataUnsignedInt` is intended for the 32-bit indices used by
 `std/game` meshes.
 
@@ -222,11 +224,12 @@ a batch layout. `bufferDataBytes` preserves packed and normalized vertex data;
 request, which the caller retains until completion. Loaded `BrowserImage`
 handles retain the decoded source and can be
 uploaded with `textureImage` or `createTextureImage`; both image and texture
-resources are released deterministically. Compressed texture formats, general
-extension access, and WebGL 2 remain future layers.
+resources are released deterministically. Compressed texture formats and
+general extension access remain future layers.
 
-Depth textures and render targets are available when
-`supportsDepthTextures()` reports the WebGL 1 extension. A depth texture can be
+Depth textures and render targets are part of the WebGL 2 baseline;
+`supportsDepthTextures()` remains as a compatibility query. A depth texture can
+be
 paired with `createDepthFramebuffer`; framebuffer and renderbuffer handles are
 retained resources and are deleted deterministically. The lower-level bind,
 attach, storage, and status methods remain available for render-pass code.

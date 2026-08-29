@@ -50,7 +50,7 @@ export function start(): none {
   drawing.setFillStyle("#f9fafb").setFont("16px sans-serif").fillText("Doof + Canvas", 204.0, 66.0)
 
   webglSurface := <canvas id="webgl-preview" width=320 height=160 ariaLabel="WebGL textured instances preview">
-    Your browser does not support WebGL.
+    Your browser does not support WebGL 2.
   </canvas>
   gl := webglSurface.contextWebgl(WebGLContextOptions {
     alpha: false,
@@ -58,8 +58,8 @@ export function start(): none {
     powerPreference: WebGLPowerPreference.HighPerformance,
   })
   program := try! gl.createProgram(
-    "attribute vec2 position; attribute vec2 uv; attribute vec2 instanceOffset; uniform mat4 scene; varying vec2 textureUv; void main() { textureUv = uv; gl_Position = scene * vec4(position + instanceOffset, 0.0, 1.0); }",
-    "precision mediump float; varying vec2 textureUv; uniform sampler2D atlas; void main() { gl_FragColor = texture2D(atlas, textureUv); }",
+    "#version 300 es\nin vec2 position; in vec2 uv; in vec2 instanceOffset; uniform mat4 scene; out vec2 textureUv; void main() { textureUv = uv; gl_Position = scene * vec4(position + instanceOffset, 0.0, 1.0); }",
+    "#version 300 es\nprecision mediump float; in vec2 textureUv; uniform sampler2D atlas; out vec4 fragmentColor; void main() { fragmentColor = texture(atlas, textureUv); }",
   )
   vertices := gl.createBuffer()
   indices := gl.createBuffer()
@@ -69,16 +69,14 @@ export function start(): none {
     96, 165, 250, 255, 34, 197, 94, 255,
   ]
   texture := gl.createTextureRgba(2, 2, pixels)
-  if gl.supportsDepthTextures() {
-    depthTexture := try! gl.createDepthTexture(128, 128)
-    depthFramebuffer := try! gl.createDepthFramebuffer(depthTexture)
-    gl.bindFramebuffer(WebGLFramebufferTarget.Framebuffer, depthFramebuffer)
-      .viewport(0, 0, 128, 128)
-      .colorMask(false, false, false, false)
-      .clear(false, true)
-      .unbindFramebuffer()
-      .colorMask(true, true, true, true)
-  }
+  depthTexture := try! gl.createDepthTexture(128, 128)
+  depthFramebuffer := try! gl.createDepthFramebuffer(depthTexture)
+  gl.bindFramebuffer(WebGLFramebufferTarget.Framebuffer, depthFramebuffer)
+    .viewport(0, 0, 128, 128)
+    .colorMask(false, false, false, false)
+    .clear(false, true)
+    .unbindFramebuffer()
+    .colorMask(true, true, true, true)
   gl.useProgram(program)
     .bindBuffer(WebGLBufferTarget.Array, vertices)
     .bufferData(WebGLBufferTarget.Array, [
@@ -115,13 +113,8 @@ export function start(): none {
     0.0, 0.0, 1.0, 0.0,
     0.0, 0.0, 0.0, 1.0,
   ])
-  if gl.supportsInstancing() {
-    gl.attributeDivisor(instanceOffset, 1)
-    gl.drawElementsInstanced(WebGLPrimitive.Triangles, 6, WebGLDataType.UnsignedShort, 6)
-  } else {
-    gl.disableAttribute(instanceOffset)
-    gl.drawElements(WebGLPrimitive.Triangles, 6, WebGLDataType.UnsignedShort)
-  }
+  gl.attributeDivisor(instanceOffset, 1)
+  gl.drawElementsInstanced(WebGLPrimitive.Triangles, 6, WebGLDataType.UnsignedShort, 6)
   gl.flush()
 
   imageStatus := <p id="image-texture-status">Loading image texture</p>

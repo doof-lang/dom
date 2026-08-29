@@ -1349,7 +1349,7 @@ public:
             element->state_->handle, alpha, antialias, depth, stencil,
             premultipliedAlpha, preserveDrawingBuffer, powerPreference
         );
-        if (handle == 0) doof::panic("The browser could not create a WebGL context");
+        if (handle == 0) doof::panic("The browser or GPU does not support WebGL 2");
         return std::shared_ptr<NativeWebGLContext>(new NativeWebGLContext(handle, element));
     }
 
