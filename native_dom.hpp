@@ -3,9 +3,11 @@
 #include "doof_runtime.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <cstdint>
 #include <limits>
+#include <map>
 #include <memory>
 #include <optional>
 #include <string>
@@ -49,6 +51,8 @@ __attribute__((import_module("doof_dom"), import_name("blur")))
 void doof_dom_blur(int32_t node);
 __attribute__((import_module("doof_dom"), import_name("element_number")))
 double doof_dom_element_number(int32_t node, int32_t property);
+__attribute__((import_module("doof_dom"), import_name("serialize_node")))
+int32_t doof_dom_serialize_node(int32_t node, int32_t inner, char* output, int32_t capacity);
 __attribute__((import_module("doof_dom"), import_name("request_animation_frame")))
 int32_t doof_dom_request_animation_frame(int32_t callback_id, int32_t dispatcher);
 __attribute__((import_module("doof_dom"), import_name("cancel_animation_frame")))
@@ -159,6 +163,101 @@ namespace doof_dom {
 
 namespace detail {
 
+#if !defined(__EMSCRIPTEN__)
+struct HeadlessNode {
+    bool textNode = false;
+    std::string tagName;
+    std::string text;
+    std::map<std::string, std::string> attributes;
+    std::string value;
+    bool checked = false;
+    bool disabled = false;
+    bool focused = false;
+    int32_t parent = -1;
+    std::vector<int32_t> children;
+};
+
+inline std::unordered_map<int32_t, HeadlessNode>& headlessNodes() {
+    static auto* values = new std::unordered_map<int32_t, HeadlessNode>();
+    return *values;
+}
+
+inline HeadlessNode& headlessNode(int32_t handle) {
+    const auto found = headlessNodes().find(handle);
+    if (found == headlessNodes().end()) doof::panic("Unknown headless DOM node handle");
+    return found->second;
+}
+
+inline std::string lowerAscii(std::string value) {
+    std::transform(value.begin(), value.end(), value.begin(), [](unsigned char character) {
+        return static_cast<char>(std::tolower(character));
+    });
+    return value;
+}
+
+inline void detachHeadless(int32_t handle) {
+    auto& value = headlessNode(handle);
+    if (value.parent < 0) return;
+    auto& siblings = headlessNode(value.parent).children;
+    siblings.erase(std::remove(siblings.begin(), siblings.end(), handle), siblings.end());
+    value.parent = -1;
+}
+
+inline std::string escapeHtml(const std::string& value, bool attribute) {
+    std::string result;
+    result.reserve(value.size());
+    for (const char character : value) {
+        if (character == '&') result += "&amp;";
+        else if (character == '<') result += "&lt;";
+        else if (character == '>') result += "&gt;";
+        else if (attribute && character == '"') result += "&quot;";
+        else result += character;
+    }
+    return result;
+}
+
+inline bool isVoidElement(const std::string& tagName) {
+    return tagName == "area" || tagName == "base" || tagName == "br" ||
+        tagName == "col" || tagName == "embed" || tagName == "hr" ||
+        tagName == "img" || tagName == "input" || tagName == "link" ||
+        tagName == "meta" || tagName == "param" || tagName == "source" ||
+        tagName == "track" || tagName == "wbr";
+}
+
+inline bool isBooleanAttribute(const std::string& name) {
+    return name == "checked" || name == "disabled";
+}
+
+inline std::string serializeHeadless(int32_t handle, bool inner = false) {
+    const auto& value = headlessNode(handle);
+    if (value.textNode) return escapeHtml(value.text, false);
+
+    std::string content = escapeHtml(value.text, false);
+    for (const auto child : value.children) content += serializeHeadless(child);
+    if (inner) return content;
+    if (value.tagName.empty()) return content;
+
+    auto attributes = value.attributes;
+    if (attributes["id"].empty()) attributes.erase("id");
+    if (attributes["class"].empty()) attributes.erase("class");
+    if (!value.value.empty()) attributes["value"] = value.value;
+    else attributes.erase("value");
+    if (value.checked) attributes["checked"] = "";
+    else attributes.erase("checked");
+    if (value.disabled) attributes["disabled"] = "";
+    else attributes.erase("disabled");
+
+    std::string result = "<" + value.tagName;
+    for (const auto& [name, attributeValue] : attributes) {
+        result += " " + name;
+        if (!isBooleanAttribute(name)) result += "=\"" + escapeHtml(attributeValue, true) + "\"";
+    }
+    result += ">";
+    if (!isVoidElement(value.tagName)) result += content + "</" + value.tagName + ">";
+    return result;
+}
+#endif
+
 inline int32_t nextNativeHandle() {
     static int32_t next = 3;
     return next++;
@@ -168,6 +267,10 @@ inline int32_t documentAnchor(int32_t kind) {
 #if defined(__EMSCRIPTEN__)
     return doof_dom_document_anchor(kind);
 #else
+    auto& values = headlessNodes();
+    if (values.find(0) == values.end()) values.emplace(0, HeadlessNode {});
+    if (values.find(1) == values.end()) values.emplace(1, HeadlessNode { false, "head" });
+    if (values.find(2) == values.end()) values.emplace(2, HeadlessNode { false, "body" });
     return kind;
 #endif
 }
@@ -176,8 +279,9 @@ inline int32_t createElement(const std::string& tagName) {
 #if defined(__EMSCRIPTEN__)
     return doof_dom_create_element(tagName.c_str());
 #else
-    (void)tagName;
-    return nextNativeHandle();
+    const int32_t handle = nextNativeHandle();
+    headlessNodes().emplace(handle, HeadlessNode { false, lowerAscii(tagName) });
+    return handle;
 #endif
 }
 
@@ -185,8 +289,12 @@ inline int32_t createText(const std::string& text) {
 #if defined(__EMSCRIPTEN__)
     return doof_dom_create_text(text.c_str());
 #else
-    (void)text;
-    return nextNativeHandle();
+    const int32_t handle = nextNativeHandle();
+    HeadlessNode value;
+    value.textNode = true;
+    value.text = text;
+    headlessNodes().emplace(handle, std::move(value));
+    return handle;
 #endif
 }
 
@@ -194,7 +302,10 @@ inline void appendTo(int32_t node, int32_t target) {
 #if defined(__EMSCRIPTEN__)
     doof_dom_append_to(node, target);
 #else
-    (void)node; (void)target;
+    detachHeadless(node);
+    auto& targetNode = headlessNode(target);
+    targetNode.children.push_back(node);
+    headlessNode(node).parent = target;
 #endif
 }
 
@@ -202,7 +313,13 @@ inline void insertBefore(int32_t node, int32_t target) {
 #if defined(__EMSCRIPTEN__)
     doof_dom_insert_before(node, target);
 #else
-    (void)node; (void)target;
+    detachHeadless(node);
+    auto& targetNode = headlessNode(target);
+    if (targetNode.parent < 0) return;
+    auto& parent = headlessNode(targetNode.parent);
+    const auto found = std::find(parent.children.begin(), parent.children.end(), target);
+    parent.children.insert(found, node);
+    headlessNode(node).parent = targetNode.parent;
 #endif
 }
 
@@ -210,7 +327,13 @@ inline void insertAfter(int32_t node, int32_t target) {
 #if defined(__EMSCRIPTEN__)
     doof_dom_insert_after(node, target);
 #else
-    (void)node; (void)target;
+    detachHeadless(node);
+    auto& targetNode = headlessNode(target);
+    if (targetNode.parent < 0) return;
+    auto& parent = headlessNode(targetNode.parent);
+    const auto found = std::find(parent.children.begin(), parent.children.end(), target);
+    parent.children.insert(found + 1, node);
+    headlessNode(node).parent = targetNode.parent;
 #endif
 }
 
@@ -218,7 +341,14 @@ inline void replace(int32_t node, int32_t target) {
 #if defined(__EMSCRIPTEN__)
     doof_dom_replace(node, target);
 #else
-    (void)node; (void)target;
+    detachHeadless(node);
+    auto& targetNode = headlessNode(target);
+    if (targetNode.parent < 0) return;
+    auto& parent = headlessNode(targetNode.parent);
+    const auto found = std::find(parent.children.begin(), parent.children.end(), target);
+    *found = node;
+    headlessNode(node).parent = targetNode.parent;
+    targetNode.parent = -1;
 #endif
 }
 
@@ -226,7 +356,7 @@ inline void unmount(int32_t node) {
 #if defined(__EMSCRIPTEN__)
     doof_dom_unmount(node);
 #else
-    (void)node;
+    detachHeadless(node);
 #endif
 }
 
@@ -234,7 +364,10 @@ inline void destroy(int32_t node, bool borrowed) {
 #if defined(__EMSCRIPTEN__)
     if (!borrowed) doof_dom_destroy(node);
 #else
-    (void)node; (void)borrowed;
+    if (!borrowed) {
+        detachHeadless(node);
+        headlessNodes().erase(node);
+    }
 #endif
 }
 
@@ -242,7 +375,10 @@ inline void setText(int32_t node, const std::string& text) {
 #if defined(__EMSCRIPTEN__)
     doof_dom_set_text(node, text.c_str());
 #else
-    (void)node; (void)text;
+    auto& value = headlessNode(node);
+    for (const auto child : value.children) headlessNode(child).parent = -1;
+    value.children.clear();
+    value.text = text;
 #endif
 }
 
@@ -250,7 +386,14 @@ inline void setString(int32_t node, int32_t property, const std::string& value) 
 #if defined(__EMSCRIPTEN__)
     doof_dom_set_string(node, property, value.c_str());
 #else
-    (void)node; (void)property; (void)value;
+    auto& target = headlessNode(node);
+    if (property == 0) {
+        if (value.empty()) target.attributes.erase("id");
+        else target.attributes["id"] = value;
+    } else if (property == 1) {
+        if (value.empty()) target.attributes.erase("class");
+        else target.attributes["class"] = value;
+    } else if (property == 2) target.value = value;
 #endif
 }
 
@@ -258,7 +401,9 @@ inline void setBool(int32_t node, int32_t property, bool value) {
 #if defined(__EMSCRIPTEN__)
     doof_dom_set_bool(node, property, value ? 1 : 0);
 #else
-    (void)node; (void)property; (void)value;
+    auto& target = headlessNode(node);
+    if (property == 0) target.disabled = value;
+    else if (property == 1) target.checked = value;
 #endif
 }
 
@@ -266,7 +411,12 @@ inline void setAttribute(int32_t node, const std::string& name, const std::strin
 #if defined(__EMSCRIPTEN__)
     doof_dom_set_attribute(node, name.c_str(), value.c_str());
 #else
-    (void)node; (void)name; (void)value;
+    auto& target = headlessNode(node);
+    const auto normalized = lowerAscii(name);
+    target.attributes[normalized] = value;
+    if (normalized == "disabled") target.disabled = true;
+    else if (normalized == "checked") target.checked = true;
+    else if (normalized == "value") target.value = value;
 #endif
 }
 
@@ -274,7 +424,12 @@ inline void removeAttribute(int32_t node, const std::string& name) {
 #if defined(__EMSCRIPTEN__)
     doof_dom_remove_attribute(node, name.c_str());
 #else
-    (void)node; (void)name;
+    auto& target = headlessNode(node);
+    const auto normalized = lowerAscii(name);
+    target.attributes.erase(normalized);
+    if (normalized == "disabled") target.disabled = false;
+    else if (normalized == "checked") target.checked = false;
+    else if (normalized == "value") target.value = "";
 #endif
 }
 
@@ -282,7 +437,7 @@ inline void focus(int32_t node) {
 #if defined(__EMSCRIPTEN__)
     doof_dom_focus(node);
 #else
-    (void)node;
+    for (auto& [handle, value] : headlessNodes()) value.focused = handle == node;
 #endif
 }
 
@@ -290,7 +445,19 @@ inline void blur(int32_t node) {
 #if defined(__EMSCRIPTEN__)
     doof_dom_blur(node);
 #else
-    (void)node;
+    headlessNode(node).focused = false;
+#endif
+}
+
+inline std::string serializeNode(int32_t node, bool inner) {
+#if defined(__EMSCRIPTEN__)
+    const int32_t length = doof_dom_serialize_node(node, inner ? 1 : 0, nullptr, 0);
+    if (length < 0) return "";
+    std::vector<char> value(static_cast<std::size_t>(length) + 1, '\0');
+    const int32_t written = doof_dom_serialize_node(node, inner ? 1 : 0, value.data(), length + 1);
+    return written < 0 ? "" : std::string(value.data(), static_cast<std::size_t>(written));
+#else
+    return serializeHeadless(node, inner);
 #endif
 }
 
@@ -621,8 +788,20 @@ inline double elementNumber(int32_t node, int32_t property) {
 #if defined(__EMSCRIPTEN__)
     return doof_dom_element_number(node, property);
 #else
-    (void)node; (void)property;
-    return property == 4 ? 1.0 : 0.0;
+    if (property == 4) return 1.0;
+    if (property < 0 || property > 3) return 0.0;
+    const auto& value = headlessNode(node);
+    const auto name = property == 0 || property == 2 ? "width" : "height";
+    const auto found = value.attributes.find(name);
+    if (found == value.attributes.end()) {
+        if (value.tagName != "canvas") return 0.0;
+        return name == std::string("width") ? 300.0 : 150.0;
+    }
+    try {
+        return std::stod(found->second);
+    } catch (...) {
+        return 0.0;
+    }
 #endif
 }
 
@@ -942,19 +1121,48 @@ inline void removeEvent(int32_t node, const std::string& eventType, int32_t call
 struct NodeState {
     int32_t handle;
     bool borrowed;
+    bool disposed = false;
     std::weak_ptr<NodeState> parent;
     std::vector<std::shared_ptr<NodeState>> children;
     std::unordered_map<std::string, int32_t> eventCallbacks;
 
     NodeState(int32_t handle, bool borrowed) : handle(handle), borrowed(borrowed) {}
 
-    ~NodeState() {
+    ~NodeState() { dispose(); }
+
+    void ensureAlive() const {
+        if (disposed) doof::panic("Cannot use a disposed DOM element");
+    }
+
+    void clearEventHandlers(bool recursive) {
+        if (disposed) return;
         for (const auto& [eventType, callbackId] : eventCallbacks) {
             removeEvent(handle, eventType, callbackId);
             callbacks().erase(callbackId);
         }
-        for (const auto& child : children) child->parent.reset();
+        eventCallbacks.clear();
+        if (recursive) {
+            for (const auto& child : children) child->clearEventHandlers(true);
+        }
+    }
+
+    void dispose() {
+        if (disposed) return;
+        disposed = true;
+        for (const auto& [eventType, callbackId] : eventCallbacks) {
+            removeEvent(handle, eventType, callbackId);
+            callbacks().erase(callbackId);
+        }
+        eventCallbacks.clear();
+        auto ownedChildren = std::move(children);
+        children.clear();
+        for (const auto& child : ownedChildren) {
+            child->parent.reset();
+            child->dispose();
+        }
+        parent.reset();
         destroy(handle, borrowed);
+        handle = -1;
     }
 };
 
@@ -997,19 +1205,26 @@ public:
     }
 
     void appendChild(const std::shared_ptr<NativeElement>& child) {
+        state_->ensureAlive();
+        child->state_->ensureAlive();
         appendState(child->state_);
     }
 
     void appendText(const std::string& text) {
+        state_->ensureAlive();
         auto child = std::make_shared<detail::NodeState>(detail::createText(text), false);
         appendState(child);
     }
 
     void appendTo(const std::shared_ptr<NativeElement>& target) {
+        state_->ensureAlive();
+        target->state_->ensureAlive();
         target->appendState(state_);
     }
 
     void insertBefore(const std::shared_ptr<NativeElement>& target) {
+        state_->ensureAlive();
+        target->state_->ensureAlive();
         if (state_ == target->state_) return;
         auto parent = target->state_->parent.lock();
         if (!parent) doof::panic("Cannot insert before a detached DOM element");
@@ -1022,6 +1237,8 @@ public:
     }
 
     void insertAfter(const std::shared_ptr<NativeElement>& target) {
+        state_->ensureAlive();
+        target->state_->ensureAlive();
         if (state_ == target->state_) return;
         auto parent = target->state_->parent.lock();
         if (!parent) doof::panic("Cannot insert after a detached DOM element");
@@ -1034,6 +1251,8 @@ public:
     }
 
     void replace(const std::shared_ptr<NativeElement>& target) {
+        state_->ensureAlive();
+        target->state_->ensureAlive();
         if (state_ == target->state_) return;
         auto parent = target->state_->parent.lock();
         if (!parent) doof::panic("Cannot replace a detached DOM element");
@@ -1047,34 +1266,38 @@ public:
     }
 
     void unmount() {
+        state_->ensureAlive();
         if (state_->borrowed) doof::panic("Document head and body cannot be unmounted");
         detail::detach(state_);
         detail::unmount(state_->handle);
     }
 
     void setText(const std::string& text) {
+        state_->ensureAlive();
         for (const auto& child : state_->children) child->parent.reset();
         state_->children.clear();
         detail::setText(state_->handle, text);
     }
 
-    void setId(const std::string& id) { detail::setString(state_->handle, 0, id); }
-    void setClassName(const std::string& className) { detail::setString(state_->handle, 1, className); }
-    void setDisabled(bool disabled) { detail::setBool(state_->handle, 0, disabled); }
-    void setValue(const std::string& value) { detail::setString(state_->handle, 2, value); }
-    void setChecked(bool checked) { detail::setBool(state_->handle, 1, checked); }
+    void setId(const std::string& id) { state_->ensureAlive(); detail::setString(state_->handle, 0, id); }
+    void setClassName(const std::string& className) { state_->ensureAlive(); detail::setString(state_->handle, 1, className); }
+    void setDisabled(bool disabled) { state_->ensureAlive(); detail::setBool(state_->handle, 0, disabled); }
+    void setValue(const std::string& value) { state_->ensureAlive(); detail::setString(state_->handle, 2, value); }
+    void setChecked(bool checked) { state_->ensureAlive(); detail::setBool(state_->handle, 1, checked); }
     void setAttribute(const std::string& name, const std::string& value) {
+        state_->ensureAlive();
         detail::setAttribute(state_->handle, name, value);
     }
-    void removeAttribute(const std::string& name) { detail::removeAttribute(state_->handle, name); }
-    void focus() { detail::focus(state_->handle); }
-    void blur() { detail::blur(state_->handle); }
-    double numberProperty(int32_t property) { return detail::elementNumber(state_->handle, property); }
+    void removeAttribute(const std::string& name) { state_->ensureAlive(); detail::removeAttribute(state_->handle, name); }
+    void focus() { state_->ensureAlive(); detail::focus(state_->handle); }
+    void blur() { state_->ensureAlive(); detail::blur(state_->handle); }
+    double numberProperty(int32_t property) { state_->ensureAlive(); return detail::elementNumber(state_->handle, property); }
 
     void setEventHandler(
         const std::string& eventType,
         doof::callback<void(std::shared_ptr<NativeDomEvent>)> handler
     ) {
+        state_->ensureAlive();
         const auto existing = state_->eventCallbacks.find(eventType);
         if (existing != state_->eventCallbacks.end()) {
             detail::removeEvent(state_->handle, eventType, existing->second);
@@ -1087,6 +1310,7 @@ public:
     }
 
     void clearEventHandler(const std::string& eventType) {
+        state_->ensureAlive();
         const auto existing = state_->eventCallbacks.find(eventType);
         if (existing == state_->eventCallbacks.end()) return;
         detail::removeEvent(state_->handle, eventType, existing->second);
@@ -1094,10 +1318,34 @@ public:
         state_->eventCallbacks.erase(existing);
     }
 
+    void clearEventHandlers(bool recursive) {
+        state_->clearEventHandlers(recursive);
+    }
+
+    void dispose() {
+        if (state_->disposed) return;
+        if (state_->borrowed) doof::panic("Document anchors cannot be disposed");
+        auto retained = state_;
+        detail::detach(retained);
+        retained->dispose();
+    }
+
+    std::string outerHtml() {
+        state_->ensureAlive();
+        return detail::serializeNode(state_->handle, false);
+    }
+
+    std::string innerHtml() {
+        state_->ensureAlive();
+        return detail::serializeNode(state_->handle, true);
+    }
+
 private:
     explicit NativeElement(std::shared_ptr<detail::NodeState> state) : state_(std::move(state)) {}
 
     void appendState(const std::shared_ptr<detail::NodeState>& child) {
+        state_->ensureAlive();
+        child->ensureAlive();
         detail::ensureCanContain(child, state_);
         detail::detach(child);
         state_->children.push_back(child);
@@ -1180,6 +1428,7 @@ public:
 class NativeCanvasContext {
 public:
     static std::shared_ptr<NativeCanvasContext> create(const std::shared_ptr<NativeElement>& element) {
+        element->state_->ensureAlive();
         const int32_t handle = detail::canvasContext2d(element->state_->handle);
         if (handle == 0) doof::panic("The DOM element does not provide a 2D canvas context");
         return std::shared_ptr<NativeCanvasContext>(new NativeCanvasContext(handle, element));
@@ -1345,6 +1594,7 @@ public:
         bool alpha, bool antialias, bool depth, bool stencil,
         bool premultipliedAlpha, bool preserveDrawingBuffer, int32_t powerPreference
     ) {
+        element->state_->ensureAlive();
         const int32_t handle = detail::webglContext(
             element->state_->handle, alpha, antialias, depth, stencil,
             premultipliedAlpha, preserveDrawingBuffer, powerPreference
@@ -1643,6 +1893,9 @@ public:
     std::shared_ptr<NativeElement> head() { return head_; }
     std::shared_ptr<NativeElement> body() { return body_; }
     std::shared_ptr<NativeElement> window() { return window_; }
+    std::string serializeHtml() {
+        return "<!doctype html><html>" + head_->outerHtml() + body_->outerHtml() + "</html>";
+    }
 
 private:
     NativeDocument()

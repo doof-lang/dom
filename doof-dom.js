@@ -76,6 +76,63 @@ function createDomBridge(document, onError) {
     webglResources.set(resourceId, { contextId, kind, value });
     return resourceId;
   };
+  const destroyContext = (id) => {
+    const value = contexts.get(id)?.value;
+    if (value) {
+      for (const [resourceId, registration] of webglResources) {
+        if (registration.contextId !== id) continue;
+        if (registration.kind === "shader") value.deleteShader(registration.value);
+        else if (registration.kind === "program") value.deleteProgram(registration.value);
+        else if (registration.kind === "buffer") value.deleteBuffer(registration.value);
+        else if (registration.kind === "texture") value.deleteTexture(registration.value);
+        else if (registration.kind === "framebuffer") value.deleteFramebuffer(registration.value);
+        else if (registration.kind === "renderbuffer") value.deleteRenderbuffer(registration.value);
+        webglResources.delete(resourceId);
+      }
+    }
+    contexts.delete(id);
+  };
+  const escapeHtml = (value, attribute = false) => {
+    let escaped = String(value)
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;");
+    if (attribute) escaped = escaped.replaceAll("\"", "&quot;");
+    return escaped;
+  };
+  const voidElements = new Set([
+    "area", "base", "br", "col", "embed", "hr", "img", "input", "link",
+    "meta", "param", "source", "track", "wbr",
+  ]);
+  const serializeDomNode = (value, inner = false) => {
+    if (value.nodeType === 3) return escapeHtml(value.nodeValue ?? value.text ?? "");
+    const tagName = String(value.tagName ?? "").toLowerCase();
+    const children = Array.from(value.childNodes ?? []).map((child) => serializeDomNode(child)).join("");
+    const content = escapeHtml(value.text ?? "") + children;
+    if (inner) return content;
+    if (!tagName || tagName === "window") return content;
+
+    const attributes = new Map();
+    if (value.attributes instanceof Map) {
+      for (const [name, attributeValue] of value.attributes) attributes.set(name.toLowerCase(), String(attributeValue));
+    } else {
+      for (const attribute of Array.from(value.attributes ?? [])) attributes.set(attribute.name.toLowerCase(), attribute.value);
+    }
+    if (value.id) attributes.set("id", value.id); else attributes.delete("id");
+    if (value.className) attributes.set("class", value.className); else attributes.delete("class");
+    if (typeof value.value === "string" && value.value !== "") attributes.set("value", value.value);
+    else attributes.delete("value");
+    if (value.checked) attributes.set("checked", ""); else attributes.delete("checked");
+    if (value.disabled) attributes.set("disabled", ""); else attributes.delete("disabled");
+
+    const serializedAttributes = Array.from(attributes).sort(([left], [right]) => left < right ? -1 : left > right ? 1 : 0)
+      .map(([name, attributeValue]) => name === "checked" || name === "disabled"
+        ? ` ${name}`
+        : ` ${name}=\"${escapeHtml(attributeValue, true)}\"`)
+      .join("");
+    const opening = `<${tagName}${serializedAttributes}>`;
+    return voidElements.has(tagName) ? opening : `${opening}${content}</${tagName}>`;
+  };
 
   const imports = {
     document_anchor(kind) {
@@ -109,7 +166,7 @@ function createDomBridge(document, onError) {
       value.remove();
       nodes.delete(id);
       for (const [contextId, registration] of contexts) {
-        if (registration.canvas === value) contexts.delete(contextId);
+        if (registration.canvas === value) destroyContext(contextId);
       }
       for (const [callbackId, registration] of listeners) {
         if (registration.node === value) {
@@ -153,6 +210,9 @@ function createDomBridge(document, onError) {
       const values = [value.width, value.height, value.clientWidth, value.clientHeight, browserWindow.devicePixelRatio, bounds.left, bounds.top];
       const result = values[property];
       return typeof result === "number" ? result : 0;
+    },
+    serialize_node(id, inner, output, capacity) {
+      return writeString(serializeDomNode(node(id), inner !== 0), output, capacity);
     },
     request_animation_frame(callbackId, dispatcher) {
       return browserWindow.requestAnimationFrame((timestamp) => {
@@ -320,20 +380,7 @@ function createDomBridge(document, onError) {
       return contextId;
     },
     destroy_webgl_context(id) {
-      const value = contexts.get(id)?.value;
-      if (value) {
-        for (const [resourceId, registration] of webglResources) {
-          if (registration.contextId !== id) continue;
-          if (registration.kind === "shader") value.deleteShader(registration.value);
-          else if (registration.kind === "program") value.deleteProgram(registration.value);
-          else if (registration.kind === "buffer") value.deleteBuffer(registration.value);
-          else if (registration.kind === "texture") value.deleteTexture(registration.value);
-          else if (registration.kind === "framebuffer") value.deleteFramebuffer(registration.value);
-          else if (registration.kind === "renderbuffer") value.deleteRenderbuffer(registration.value);
-          webglResources.delete(resourceId);
-        }
-      }
-      contexts.delete(id);
+      destroyContext(id);
     },
     webgl_create_resource(id, kind, option) {
       const value = context(id);
@@ -348,8 +395,14 @@ function createDomBridge(document, onError) {
     webgl_delete_resource(id, kind, resourceId) {
       const kinds = ["shader", "program", "buffer", "texture", "framebuffer", "renderbuffer"];
       const name = kinds[kind];
+      const registration = webglResources.get(resourceId);
+      if (!registration) return;
       const resource = webglResource(id, resourceId, name);
-      const value = context(id);
+      const value = contexts.get(id)?.value;
+      if (!value) {
+        webglResources.delete(resourceId);
+        return;
+      }
       if (name === "shader") value.deleteShader(resource);
       else if (name === "program") value.deleteProgram(resource);
       else if (name === "buffer") value.deleteBuffer(resource);

@@ -306,6 +306,46 @@ test("creates elements and text immediately and moves known handles", () => {
   assert.deepEqual(document.body.childNodes, [document.created[1]]);
 });
 
+test("serializes canonical HTML with live properties", () => {
+  const { imports, memory, write } = harness();
+  const section = imports.create_element(write("section"));
+  const text = imports.create_text(write("Safe <text> & more"));
+  const input = imports.create_element(write("input"));
+  imports.set_string(section, 1, write("panel"));
+  imports.set_attribute(section, write("aria-label"), write("Main <content>"));
+  imports.set_string(input, 0, write("name"));
+  imports.set_string(input, 2, write("Ada & Bob"));
+  imports.set_bool(input, 0, 1);
+  imports.set_bool(input, 1, 1);
+  imports.append_to(text, section);
+  imports.append_to(input, section);
+
+  const output = 4096;
+  const length = imports.serialize_node(section, 0, output, 1024);
+  const html = new TextDecoder().decode(new Uint8Array(memory.buffer, output, length));
+  assert.equal(
+    html,
+    "<section aria-label=\"Main &lt;content&gt;\" class=\"panel\">Safe &lt;text&gt; &amp; more<input checked disabled id=\"name\" value=\"Ada &amp; Bob\"></section>",
+  );
+});
+
+test("destroys element listeners and canvas resources idempotently", () => {
+  const { document, imports, write } = harness();
+  const canvas = imports.create_element(write("canvas"));
+  const context = imports.canvas_context_webgl(canvas, 1, 1, 1, 0, 1, 0, 0);
+  const buffer = imports.webgl_create_resource(context, 2, 0);
+  imports.add_event(canvas, write("click"), 42, 9);
+
+  imports.destroy(canvas);
+  imports.destroy(canvas);
+  imports.destroy_webgl_context(context);
+  imports.webgl_delete_resource(context, 2, buffer);
+
+  assert.equal(document.created[0].listeners.size, 0);
+  assert.ok(document.created[0].webglContext.calls.some(([name]) => name === "deleteBuffer"));
+  assert.throws(() => imports.webgl_operation(context, 19, 0, 0, 0, 0, 0, 0, 0, 0), /Unknown Doof canvas context/);
+});
+
 test("applies safe properties", () => {
   const { document, imports, write } = harness();
   const element = imports.create_element(write("button"));
@@ -632,6 +672,7 @@ test("runs the compiled counter through the real WASM bridge", {
   const document = new FakeDocument();
   const app = await loadDoofDom(await readFile(sampleWasm), { document });
   app.call("start");
+  const snapshot = app.call("htmlSnapshot");
 
   const findById = (node, id) => {
     if (node.id === id) return node;
@@ -653,6 +694,13 @@ test("runs the compiled counter through the real WASM bridge", {
   assert.ok(name);
   assert.ok(greeting);
   assert.ok(imageStatus);
+  assert.match(snapshot, /^<!doctype html><html><head><\/head><body>/);
+  assert.match(snapshot, /<div class="count" id="count">Count: 0<\/div>/);
+  const disposableRoot = document.created.find((node) => node.id === "disposable-root");
+  const disposableChild = document.created.find((node) => node.id === "disposable-child");
+  assert.equal(disposableRoot.parentNode, null);
+  assert.equal(disposableChild.parentNode, null);
+  assert.equal(disposableChild.listeners.size, 0);
   assert.ok(webgl.calls.some(([operation, location, transpose, values]) =>
     operation === "uniformMatrix4fv"
       && location.name === "scene"

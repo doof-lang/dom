@@ -1,9 +1,26 @@
 # std/dom
 
-`std/dom` lets a WebAssembly Doof program create and mutate browser DOM
-elements with typed-tag syntax. Elements are live: calling `div` immediately
+`std/dom` lets a Doof program create and mutate DOM elements with typed-tag
+syntax. In browser-Wasm builds elements are live: calling `div` immediately
 calls `document.createElement("div")`, and every placement or mutation is
 applied synchronously.
+
+Native builds use an in-memory headless DOM with the same element and placement
+API. `outerHtml()`, `innerHtml()`, and `domDocument().serializeHtml()` produce
+canonical HTML with sorted attributes and current form-control state, making
+the native backend suitable for server rendering and deterministic snapshots.
+
+Two native samples exercise that backend:
+
+```sh
+doof run dom/samples/headless-render
+doof run dom/samples/headless-components
+```
+
+`headless-render` emits a complete HTML document suitable for static or server
+rendering. `headless-components` shows state mutation, retained-handle
+reordering, unmounting and reattachment, replacement, handler cleanup, and
+recursive disposal as a sequence of snapshots.
 
 The API intentionally does not expose parent or child navigation. The browser
 DOM is the hierarchy source of truth; Doof code moves known element handles.
@@ -55,6 +72,12 @@ All operations preserve element identity. `unmount` only detaches, so the same
 handle and its event callbacks can be placed again. The borrowed values from
 `domDocument().head()` and `.body()` are placement targets and cannot
 themselves be replaced or unmounted.
+
+`dispose()` is the permanent lifecycle boundary for dynamically removed UI. It
+recursively unregisters event handlers, disposes managed descendants, removes
+the subtree, and releases browser resources. It is safe to call more than once;
+other operations on a disposed element panic. Use `unmount()` when the element
+will be reattached, and `dispose()` when it will not.
 
 ## Elements
 
@@ -116,6 +139,11 @@ Handlers can also be replaced or cleared without recreating the element:
 field.setOnInput(handleInput)
 field.clearOnInput()
 ```
+
+`clearEventHandlers()` removes every handler on an element while keeping the
+element alive. Pass `true` to clear handlers throughout its managed subtree.
+This is useful for breaking reference-counting cycles before handing a retained
+tree to different code; `dispose()` always performs recursive cleanup.
 
 The same retained-handler methods are available for click, change, and submit.
 

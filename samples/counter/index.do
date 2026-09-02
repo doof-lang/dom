@@ -8,6 +8,8 @@ import {
 
 let imageRequests: ImageLoadRequest[] = []
 
+export function htmlSnapshot(): string => domDocument().serializeHtml()
+
 export function start(): none {
   let count = 0
   countLabel := <div id="count" className="count">Count: 0</div>
@@ -150,4 +152,12 @@ export function start(): none {
     <div className="controls">{before}{after}{detach}{attach}{replacement}</div>
   </div>
   layout.appendTo(domDocument().body())
+
+  disposableRoot := <div id="disposable-root"/>
+  disposableChild := <button id="disposable-child">Temporary</button>
+  disposableChild.setOnClick((event) => { disposableRoot.setText(event.eventType) })
+  disposableChild.appendTo(disposableRoot)
+  disposableRoot.appendTo(domDocument().body())
+  disposableRoot.dispose()
+  disposableRoot.dispose()
 }

@@ -50,6 +50,10 @@ import class NativeElement from "native_dom.hpp" as doof_dom::NativeElement {
   numberProperty(property: int): double
   setEventHandler(eventType: string, handler: (event: NativeDomEvent): none): none
   clearEventHandler(eventType: string): none
+  clearEventHandlers(recursive: bool): none
+  dispose(): none
+  outerHtml(): string
+  innerHtml(): string
 }
 
 import class NativeDocument from "native_dom.hpp" as doof_dom::NativeDocument {
@@ -57,6 +61,7 @@ import class NativeDocument from "native_dom.hpp" as doof_dom::NativeDocument {
   head(): NativeElement
   body(): NativeElement
   window(): NativeElement
+  serializeHtml(): string
 }
 
 import class NativeAnimationFrameRequest from "native_dom.hpp" as doof_dom::NativeAnimationFrameRequest {
@@ -314,6 +319,15 @@ export class Element {
     return this
   }
 
+  clearEventHandlers(recursive: bool = false): Element {
+    native.clearEventHandlers(recursive)
+    return this
+  }
+
+  dispose(): none => native.dispose()
+  outerHtml(): string => native.outerHtml()
+  innerHtml(): string => native.innerHtml()
+
   setText(text: string): Element {
     native.setText(text)
     return this
@@ -431,6 +445,10 @@ export class Canvas {
   insertAfter(target: Element): Canvas { element.insertAfter(target); return this }
   replace(target: Element): Canvas { element.replace(target); return this }
   unmount(): Canvas { element.unmount(); return this }
+  clearEventHandlers(recursive: bool = false): Canvas { element.clearEventHandlers(recursive); return this }
+  dispose(): none => element.dispose()
+  outerHtml(): string => element.outerHtml()
+  innerHtml(): string => element.innerHtml()
   setWidth(width: int): Canvas { element.setAttribute("width", string(width)); return this }
   setHeight(height: int): Canvas { element.setAttribute("height", string(height)); return this }
   setClassName(className: string): Canvas { element.setClassName(className); return this }
@@ -895,6 +913,7 @@ export class DomDocument {
   head(): Element => Element { native: native.head() }
   body(): Element => Element { native: native.body() }
   window(): DomWindow => DomWindow { element: Element { native: native.window() } }
+  serializeHtml(): string => native.serializeHtml()
 }
 
 export function domDocument(): DomDocument {

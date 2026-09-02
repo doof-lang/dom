@@ -20,6 +20,10 @@ export function testCreatesAndPlacesElementsImmediately(): none {
   Assert.equal(second.insertBefore(first), second)
   Assert.equal(second.unmount(), second)
   Assert.equal(second.appendTo(body), second)
+  Assert.equal(
+    body.innerHtml(),
+    "<div class=\"panel\" id=\"first\">Hello</div><button disabled type=\"button\">Continue</button>",
+  )
 }
 
 export function testMovesAndReusesElementHandles(): none {
@@ -33,6 +37,7 @@ export function testMovesAndReusesElementHandles(): none {
   replacement.replace(first)
   first.replace(second)
   replacement.unmount().appendTo(body)
+  Assert.equal(body.innerHtml(), "<div>First</div><div>Replacement</div>")
 }
 
 export function testMutationsAreFluent(): none {
@@ -47,6 +52,31 @@ export function testMutationsAreFluent(): none {
   Assert.equal(element.removeAttribute("data-state"), element)
   Assert.equal(element.focus(), element)
   Assert.equal(element.blur(), element)
+}
+
+export function testSerializesHeadlessDomDeterministically(): none {
+  view := <section
+    id="content"
+    className="panel"
+    title={"Quotes: \" and &"}
+    ariaLabel="Main <content>"
+  >{"Safe <strong>text</strong> & more"}</section>
+  field := <input id="name" value="Ada & Bob" checked=true disabled=true/>
+  field.appendTo(view)
+  view.appendTo(domDocument().body())
+
+  Assert.equal(
+    view.outerHtml(),
+    "<section aria-label=\"Main &lt;content&gt;\" class=\"panel\" id=\"content\" title=\"Quotes: &quot; and &amp;\">Safe &lt;strong&gt;text&lt;/strong&gt; &amp; more<input checked disabled id=\"name\" type=\"text\" value=\"Ada &amp; Bob\"></section>",
+  )
+  Assert.equal(
+    view.innerHtml(),
+    "Safe &lt;strong&gt;text&lt;/strong&gt; &amp; more<input checked disabled id=\"name\" type=\"text\" value=\"Ada &amp; Bob\">",
+  )
+  Assert.equal(
+    domDocument().serializeHtml(),
+    "<!doctype html><html><head></head><body>" + view.outerHtml() + "</body></html>",
+  )
 }
 
 export function testContextualTagHandlerReceivesNamedEvent(): none {
@@ -244,6 +274,24 @@ export function testBuildsAFoundationalWebGLPipeline(): none {
   Assert.equal(gl.drawElements(WebGLPrimitive.Triangles, 3, WebGLDataType.UnsignedShort), gl)
   Assert.equal(gl.unbindBuffer(WebGLBufferTarget.Array).flush().finish(), gl)
   gl.useProgram(convenienceProgram)
+}
+
+export function testSupportsExplicitElementLifecycle(): none {
+  root := <div id="disposable-root"/>
+  child := <button id="disposable-child">Dispose me</button>
+  child.setOnClick((event: DomEvent): none => { root.setText(event.eventType) })
+  child.appendTo(root)
+  root.appendTo(domDocument().body())
+  Assert.equal(root.clearEventHandlers(true), root)
+  child.setOnClick((event: DomEvent): none => { root.setText(event.eventType) })
+  root.dispose()
+  root.dispose()
+  Assert.equal(domDocument().body().innerHtml(), "")
+
+  surface := <canvas/>
+  Assert.equal(surface.clearEventHandlers(true), surface)
+  surface.dispose()
+  surface.dispose()
 }
 
 function acceptsEvent(event: DomEvent): none {
