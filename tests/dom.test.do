@@ -182,19 +182,19 @@ export function testBuildsAFoundationalWebGLPipeline(): none {
     preserveDrawingBuffer: true,
     powerPreference: WebGLPowerPreference.HighPerformance,
   })
-  vertex := try! gl.compileShader(
+  vertex := gl.compileShader(
     WebGLShaderType.Vertex,
     "#version 300 es\nin vec2 position; void main() { gl_Position = vec4(position, 0.0, 1.0); }",
-  )
-  fragment := try! gl.compileShader(
+  )!
+  fragment := gl.compileShader(
     WebGLShaderType.Fragment,
     "#version 300 es\nprecision mediump float; uniform vec4 color; out vec4 fragmentColor; void main() { fragmentColor = color; }",
-  )
-  program := try! gl.linkProgram(vertex, fragment)
-  convenienceProgram := try! gl.createProgram(
+  )!
+  program := gl.linkProgram(vertex, fragment)!
+  convenienceProgram := gl.createProgram(
     "#version 300 es\nin vec2 position; void main() { gl_Position = vec4(position, 0.0, 1.0); }",
     "#version 300 es\nprecision mediump float; out vec4 color; void main() { color = vec4(1.0); }",
-  )
+  )!
   buffer := gl.createBuffer()
   indices := gl.createBuffer()
   location := gl.attributeLocation(program, "position")
@@ -213,8 +213,8 @@ export function testBuildsAFoundationalWebGLPipeline(): none {
   Assert.equal(gl.maxVertexAttributes(), 16)
   Assert.equal(gl.maxTextureUnits(), 16)
   Assert.isTrue(gl.supportsDepthTextures())
-  depthTexture := try! gl.createDepthTexture(256, 128)
-  depthFramebuffer := try! gl.createDepthFramebuffer(depthTexture)
+  depthTexture := gl.createDepthTexture(256, 128)!
+  depthFramebuffer := gl.createDepthFramebuffer(depthTexture)!
   Assert.equal(gl.bindFramebuffer(WebGLFramebufferTarget.Framebuffer, depthFramebuffer), gl)
   Assert.equal(gl.framebufferStatus(), WebGLFramebufferStatus.Complete)
   Assert.equal(gl.unbindFramebuffer(), gl)

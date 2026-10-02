@@ -59,10 +59,10 @@ export function start(): none {
     antialias: true,
     powerPreference: WebGLPowerPreference.HighPerformance,
   })
-  program := try! gl.createProgram(
+  program := gl.createProgram(
     "#version 300 es\nin vec2 position; in vec2 uv; in vec2 instanceOffset; uniform mat4 scene; out vec2 textureUv; void main() { textureUv = uv; gl_Position = scene * vec4(position + instanceOffset, 0.0, 1.0); }",
     "#version 300 es\nprecision mediump float; in vec2 textureUv; uniform sampler2D atlas; out vec4 fragmentColor; void main() { fragmentColor = texture(atlas, textureUv); }",
-  )
+  )!
   vertices := gl.createBuffer()
   indices := gl.createBuffer()
   instances := gl.createBuffer()
@@ -71,8 +71,8 @@ export function start(): none {
     96, 165, 250, 255, 34, 197, 94, 255,
   ]
   texture := gl.createTextureRgba(2, 2, pixels)
-  depthTexture := try! gl.createDepthTexture(128, 128)
-  depthFramebuffer := try! gl.createDepthFramebuffer(depthTexture)
+  depthTexture := gl.createDepthTexture(128, 128)!
+  depthFramebuffer := gl.createDepthFramebuffer(depthTexture)!
   gl.bindFramebuffer(WebGLFramebufferTarget.Framebuffer, depthFramebuffer)
     .viewport(0, 0, 128, 128)
     .colorMask(false, false, false, false)
