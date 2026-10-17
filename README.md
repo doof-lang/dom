@@ -196,10 +196,10 @@ import {
 
 surface := <canvas width=320 height=180 ariaLabel="Triangle preview"/>
 gl := surface.contextWebgl()
-program := try! gl.createProgram(
+program := gl.createProgram(
   "#version 300 es\nin vec2 position; void main() { gl_Position = vec4(position, 0.0, 1.0); }",
   "#version 300 es\nprecision mediump float; out vec4 color; void main() { color = vec4(0.3, 0.8, 1.0, 1.0); }",
-)
+)!
 vertices := gl.createBuffer()
 
 gl.useProgram(program)
