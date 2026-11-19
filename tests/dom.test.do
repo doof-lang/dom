@@ -75,7 +75,7 @@ export function testSerializesHeadlessDomDeterministically(): none {
   )
   Assert.equal(
     domDocument().serializeHtml(),
-    "<!doctype html><html><head></head><body>" + view.outerHtml() + "</body></html>",
+    "<!doctype html><html><head></head><body>${view.outerHtml()}</body></html>",
   )
 }
 

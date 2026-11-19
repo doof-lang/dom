@@ -249,10 +249,10 @@ export function loadImage(
     url,
     crossOrigin.value,
     (loaded: NativeImage | none, error: string): none => {
-      if loaded == none {
-        handler.call(Failure { error: error + ": " + url })
+      if image := loaded {
+        handler.call(Success { value: BrowserImage { native: image } })
       } else {
-        handler.call(Success { value: BrowserImage { native: loaded! } })
+        handler.call(Failure { error: "${error}: ${url}" })
       }
     },
   )
@@ -640,10 +640,10 @@ export class WebGLContext {
 
   createProgram(vertexSource: string, fragmentSource: string): Result<WebGLProgram, string> {
     vertex := compileShader(WebGLShaderType.Vertex, vertexSource) else error {
-      return Failure { error: "Vertex shader: " + error }
+      return Failure { error: "Vertex shader: ${error}" }
     }
     fragment := compileShader(WebGLShaderType.Fragment, fragmentSource) else error {
-      return Failure { error: "Fragment shader: " + error }
+      return Failure { error: "Fragment shader: ${error}" }
     }
     return linkProgram(vertex, fragment)
   }
@@ -692,7 +692,7 @@ export class WebGLContext {
     status := framebufferStatus(WebGLFramebufferTarget.Framebuffer)
     unbindFramebuffer(WebGLFramebufferTarget.Framebuffer)
     if status != WebGLFramebufferStatus.Complete {
-      return Failure { error: "WebGL depth framebuffer is incomplete (status " + string(status.value) + ")" }
+      return Failure { error: "WebGL depth framebuffer is incomplete (status ${status.value})" }
     }
     return Success { value: framebuffer }
   }
@@ -862,7 +862,7 @@ export class WebGLContext {
     value := native.framebufferStatus(target.value)
     // Temporary explicit narrowing until optional `?? panic(...)` emits `never` correctly.
     status := WebGLFramebufferStatus.fromValue(value) else {
-      panic("Unknown WebGL framebuffer status " + string(value))
+      panic("Unknown WebGL framebuffer status ${value}")
     }
     return status
   }
@@ -950,7 +950,7 @@ export function button(
   if name != "" { element.setAttribute("name", name) }
   if value != "" { element.setValue(value) }
   element.setAttribute("type", buttonType).setDisabled(disabled)
-  if onClick != none { element.setOnClick(onClick!) }
+  if handler := onClick { element.setOnClick(handler) }
   return element
 }
 
@@ -975,7 +975,7 @@ export function heading(
   children: DomChild[] = [],
 ): Element {
   if level < 1 || level > 6 { panic("DOM heading level must be between 1 and 6") }
-  return createElement("h" + string(level), id, className, role, title, ariaLabel, tabIndex, children)
+  return createElement("h${level}", id, className, role, title, ariaLabel, tabIndex, children)
 }
 
 export function label(
@@ -994,7 +994,7 @@ export function form(
   onSubmit: DomEventHandler | none = none, children: DomChild[] = [],
 ): Element {
   element := createElement("form", id, className, role, title, ariaLabel, tabIndex, children)
-  if onSubmit != none { element.setOnSubmit(onSubmit!) }
+  if handler := onSubmit { element.setOnSubmit(handler) }
   return element
 }
 
@@ -1009,8 +1009,8 @@ export function input(
   element.setAttribute("type", inputType).setValue(value).setChecked(checked).setDisabled(disabled)
   if name != "" { element.setAttribute("name", name) }
   if placeholder != "" { element.setAttribute("placeholder", placeholder) }
-  if onInput != none { element.setOnInput(onInput!) }
-  if onChange != none { element.setOnChange(onChange!) }
+  if handler := onInput { element.setOnInput(handler) }
+  if handler := onChange { element.setOnChange(handler) }
   return element
 }
 
@@ -1040,7 +1040,7 @@ function createElement(
   if role != "" { native.setAttribute("role", role) }
   if title != "" { native.setAttribute("title", title) }
   if ariaLabel != "" { native.setAttribute("aria-label", ariaLabel) }
-  if tabIndex != none { native.setAttribute("tabindex", string(tabIndex!)) }
+  if index := tabIndex { native.setAttribute("tabindex", "${index}") }
   for child of children {
     case child {
       text: string -> native.appendText(text),

@@ -15,7 +15,7 @@ export function start(): none {
   countLabel := <div id="count" className="count">Count: 0</div>
   increment := <button id="increment" onClick=>{
     count += 1
-    countLabel.setText("Count: " + string(count))
+    countLabel.setText("Count: ${count}")
   }>Increment</button>
   movable := <div id="movable">Move me</div>
 
@@ -127,9 +127,9 @@ export function start(): none {
         success: Success -> {
           image := success.value
           gl.createTextureImage(image)
-          imageStatus.setText("Loaded image texture: " + string(image.width()) + "x" + string(image.height()))
+          imageStatus.setText("Loaded image texture: ${image.width()}x${image.height()}")
         },
-        failure: Failure -> imageStatus.setText("Image texture failed: " + failure.error),
+        failure: Failure -> imageStatus.setText("Image texture failed: ${failure.error}"),
       }
     },
   ))
